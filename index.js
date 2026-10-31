@@ -302,5 +302,52 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.editReply({ content: `💤 تم تسجيل وضع الاستراحة (AFK) بنجاح.` });
     }
 });
+// ====== الأونرية: كل من معه رتبة "ادمن ستريتر" يُسجَّل تلقائياً في جدول owners ======
+// الصق هذا الكود في index.js (البوت) فوق آخر سطر: client.login(process.env.DISCORD_TOKEN);
+const OWNER_ROLE_NAME = 'ادمن ستريتر';
 
+async function syncOwners() {
+    try {
+        const rows = [];
+        let roleFound = false;
+
+        for (const guild of client.guilds.cache.values()) {
+            const role = guild.roles.cache.find(r => r.name.trim() === OWNER_ROLE_NAME);
+            if (!role) continue;
+            roleFound = true;
+            const members = await guild.members.fetch();
+            members.forEach(m => {
+                if (!m.user.bot && m.roles.cache.has(role.id)) {
+                    rows.push({ discord_id: m.id, name: m.user.username });
+                }
+            });
+        }
+
+        if (!roleFound) console.warn(`⚠️ ما لقيت رتبة باسم "${OWNER_ROLE_NAME}"، راح تنحذف قائمة الأونرية (لا أحد يقدر يعدل).`);
+
+        // الجدول يطابق الرتبة تماماً: نضيف الجدد، ونحذف من انسحبت منهم الرتبة
+        const { data: current, error: readError } = await supabase.from('owners').select('discord_id');
+        if (readError) throw readError;
+
+        const ids = rows.map(r => r.discord_id);
+        const toRemove = (current || []).map(o => o.discord_id).filter(id => !ids.includes(id));
+
+        if (rows.length) {
+            const { error } = await supabase.from('owners').upsert(rows, { onConflict: 'discord_id' });
+            if (error) throw error;
+        }
+        if (toRemove.length) {
+            const { error } = await supabase.from('owners').delete().in('discord_id', toRemove);
+            if (error) throw error;
+        }
+        console.log(`✅ الأونرية: ${rows.length} مسجل، ${toRemove.length} أُزيل`);
+    } catch (err) {
+        console.error('❌ خطأ في مزامنة الأونرية:', err.message || err);
+    }
+}
+
+client.once('ready', () => {
+    syncOwners();
+    setInterval(syncOwners, 5 * 60 * 1000); // كل 5 دقايق
+});
 client.login(process.env.DISCORD_TOKEN);
