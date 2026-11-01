@@ -302,30 +302,24 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.editReply({ content: `💤 تم تسجيل وضع الاستراحة (AFK) بنجاح.` });
     }
 });
-// ====== الأونرية: كل من معه رتبة "ادمن ستريتر" يُسجَّل تلقائياً في جدول owners ======
+// ====== الأونرية: كل من معه صلاحية Administrator في الديسكورد يُسجَّل تلقائياً في جدول owners ======
 // الصق هذا الكود في index.js (البوت) فوق آخر سطر: client.login(process.env.DISCORD_TOKEN);
-const OWNER_ROLE_NAME = 'ادمن ستريتر';
 
 async function syncOwners() {
     try {
         const rows = [];
-        let roleFound = false;
 
         for (const guild of client.guilds.cache.values()) {
-            const role = guild.roles.cache.find(r => r.name.trim() === OWNER_ROLE_NAME);
-            if (!role) continue;
-            roleFound = true;
             const members = await guild.members.fetch();
             members.forEach(m => {
-                if (!m.user.bot && m.roles.cache.has(role.id)) {
+                // الصلاحية تُحسب من كل رتب العضو (وصاحب السيرفر يُحسب إداري دائماً)
+                if (!m.user.bot && m.permissions.has(PermissionFlagsBits.Administrator)) {
                     rows.push({ discord_id: m.id, name: m.user.username });
                 }
             });
         }
 
-        if (!roleFound) console.warn(`⚠️ ما لقيت رتبة باسم "${OWNER_ROLE_NAME}"، راح تنحذف قائمة الأونرية (لا أحد يقدر يعدل).`);
-
-        // الجدول يطابق الرتبة تماماً: نضيف الجدد، ونحذف من انسحبت منهم الرتبة
+        // الجدول يطابق الصلاحية تماماً: نضيف الجدد، ونحذف من انسحبت منهم الصلاحية
         const { data: current, error: readError } = await supabase.from('owners').select('discord_id');
         if (readError) throw readError;
 
