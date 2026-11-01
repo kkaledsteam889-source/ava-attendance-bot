@@ -344,4 +344,101 @@ client.once('ready', () => {
     syncOwners();
     setInterval(syncOwners, 5 * 60 * 1000); // كل 5 دقايق
 });
+// ====== إشعار تعديل الوقت من الموقع ======
+// الصق هذا الكود في index.js (البوت) فوق آخر سطر: client.login(process.env.DISCORD_TOKEN);
+
+// الروم اللي يرسل فيه إشعار التعديل. الحين نفس روم تأكيد الحضور،
+// غيّر الرقم بين علامتي التنصيص لو تبي روم ثاني، مثال: '1234567890123456789'
+const ADJUST_CHANNEL_ID = NOTIFICATION_CHANNEL_ID;
+
+const fmtMin = (mins) => {
+    const sign = mins < 0 ? '-' : '';
+    const m = Math.abs(Math.round(mins));
+    return `${sign}${Math.floor(m / 60)}h ${m % 60}m`;
+};
+
+// مجموع وقت العضو قبل هذا التعديل (جلساته + التعديلات السابقة)
+async function memberTotalMinutes(memberId, beforeAdjId) {
+    const { data: sessions, error: e1 } = await supabase
+        .from('attendance_sessions')
+        .select('duration_hours, is_active, created_at')
+        .eq('admin_discord_id', memberId);
+    if (e1) throw e1;
+
+    const sessionMins = (sessions || []).reduce((sum, s) => {
+        const hours = s.duration_hours != null
+            ? Number(s.duration_hours)
+            : (s.is_active ? (Date.now() - new Date(s.created_at)) / 3600000 : 0);
+        return sum + hours * 60;
+    }, 0);
+
+    const { data: adjs, error: e2 } = await supabase
+        .from('time_adjustments')
+        .select('minutes')
+        .eq('member_discord_id', memberId)
+        .lt('id', beforeAdjId);
+    if (e2) throw e2;
+
+    const adjMins = (adjs || []).reduce((sum, a) => sum + a.minutes, 0);
+    return sessionMins + adjMins;
+}
+
+let adjustBusy = false;
+async function notifyAdjustments() {
+    if (adjustBusy) return;
+    adjustBusy = true;
+    try {
+        const { data: pending, error } = await supabase
+            .from('time_adjustments')
+            .select('*')
+            .eq('notified', false)
+            .order('id', { ascending: true })
+            .limit(10);
+        if (error) throw error;
+
+        for (const adj of pending || []) {
+            // نحجز الإشعار أولاً عشان ما يتكرر
+            const { data: claimed, error: claimError } = await supabase
+                .from('time_adjustments')
+                .update({ notified: true })
+                .eq('id', adj.id)
+                .eq('notified', false)
+                .select('id');
+            if (claimError || !claimed || claimed.length === 0) continue;
+
+            try {
+                const before = await memberTotalMinutes(adj.member_discord_id, adj.id);
+                const after = before + adj.minutes;
+                const isAdd = adj.minutes >= 0;
+                const channel = await client.channels.fetch(ADJUST_CHANNEL_ID);
+
+                const embed = new EmbedBuilder()
+                    .setColor(isAdd ? '#57F287' : '#ED4245')
+                    .setTitle(isAdd ? '🟢 ╎ إضافة وقت' : '🔴 ╎ خصم وقت')
+                    .setDescription(`الأونر <@${adj.edited_by}> ${isAdd ? 'أضاف وقتاً إلى' : 'خصم وقتاً من'} <@${adj.member_discord_id}>`)
+                    .addFields(
+                        { name: '⏳ مدة التعديل', value: `${isAdd ? '+' : '-'}${fmtMin(Math.abs(adj.minutes))}`, inline: true },
+                        { name: '📊 قبل التعديل', value: fmtMin(before), inline: true },
+                        { name: '📈 بعد التعديل', value: fmtMin(after), inline: true },
+                        { name: '📝 السبب', value: String(adj.reason || 'بدون سبب').slice(0, 1000) }
+                    )
+                    .setTimestamp(new Date(adj.created_at));
+
+                await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+            } catch (err) {
+                console.error('❌ فشل إرسال إشعار التعديل، راح أعيد المحاولة:', err.message || err);
+                await supabase.from('time_adjustments').update({ notified: false }).eq('id', adj.id);
+            }
+        }
+    } catch (err) {
+        console.error('❌ خطأ في فحص التعديلات:', err.message || err);
+    } finally {
+        adjustBusy = false;
+    }
+}
+
+client.once('ready', () => {
+    notifyAdjustments();
+    setInterval(notifyAdjustments, 10 * 1000); // كل 10 ثواني
+});
 client.login(process.env.DISCORD_TOKEN);
