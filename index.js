@@ -441,4 +441,43 @@ client.once('ready', () => {
     notifyAdjustments();
     setInterval(notifyAdjustments, 10 * 1000); // كل 10 ثواني
 });
+// ====== صور الأعضاء: يعبّي avatar_url تلقائياً من الديسكورد ======
+// الصق هذا الكود في index.js (البوت) فوق آخر سطر: client.login(process.env.DISCORD_TOKEN);
+// يحتاج عمود avatar_url في جدول attendance_sessions (سطر SQL في الرسالة).
+
+async function syncAvatars() {
+    try {
+        const { data, error } = await supabase
+            .from('attendance_sessions')
+            .select('admin_discord_id')
+            .is('avatar_url', null);
+        if (error) throw error;
+
+        const ids = [...new Set((data || []).map(r => r.admin_discord_id))];
+        let done = 0;
+
+        for (const id of ids) {
+            try {
+                const user = await client.users.fetch(id);
+                const url = user.displayAvatarURL({ extension: 'png', size: 128 });
+                const { error: upError } = await supabase
+                    .from('attendance_sessions')
+                    .update({ avatar_url: url })
+                    .eq('admin_discord_id', id)
+                    .is('avatar_url', null);
+                if (!upError) done++;
+            } catch (e) {
+                // حساب محذوف أو ما نقدر نجيبه، نتجاوزه
+            }
+        }
+        if (done) console.log(`✅ صور الأعضاء: تم تحديث ${done}`);
+    } catch (err) {
+        console.error('❌ خطأ في تعبئة الصور:', err.message || err);
+    }
+}
+
+client.once('ready', () => {
+    syncAvatars();
+    setInterval(syncAvatars, 10 * 60 * 1000); // كل 10 دقايق
+});
 client.login(process.env.DISCORD_TOKEN);
