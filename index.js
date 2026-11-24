@@ -150,6 +150,7 @@ client.on('interactionCreate', async (interaction) => {
 
     const userId = interaction.user.id;
     const username = interaction.user.username;
+    const shownName = (interaction.member?.displayName || username).replace(/([*_~`|\\>])/g, '\\$1');
     const timeNow = new Date();
     const timeFormatted = timeNow.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
@@ -192,7 +193,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setColor('#57F287')
                         .setAuthor({ name: username, iconURL: interaction.user.displayAvatarURL() })
                         .setTitle('🟢 ╎ تسجيل حضور جديد')
-                        .setDescription(`المستخدم <@${userId}> قام بتسجيل **الحضور** في تمام الساعة **${timeFormatted}**`);
+                        .setDescription(`المستخدم **${shownName}** قام بتسجيل **الحضور** في تمام الساعة **${timeFormatted}**`);
                     
                     await notifyChannel.send({ embeds: [logEmbed] });
                 }
@@ -259,7 +260,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setColor('#ED4245')
                         .setAuthor({ name: username, iconURL: interaction.user.displayAvatarURL() })
                         .setTitle('🟠 ╎ تسجيل مغادرة')
-                        .setDescription(`المستخدم <@${userId}> أنهى جلسته وسجل **المغادرة**`)
+                        .setDescription(`المستخدم **${shownName}** أنهى جلسته وسجل **المغادرة**`)
                         .addFields(
                             { name: '🟢 وقت الحضور', value: checkInTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), inline: true },
                             { name: '🔴 وقت المغادرة', value: timeFormatted, inline: true },
